@@ -1,0 +1,254 @@
+#!/bin/bash
+name="Shea"
+LOG="/var/log/shea.log"
+LIST=$(ls /etc/samba/shea.conf.d)
+WORK="/etc/samba/shea.conf.d/"
+#are you root ?
+if ! whoami | grep -q "root" ; then
+	echo "please run shea as root :(" && exit
+fi
+#samba check
+INFO=$(command -v samba)
+if [[ -z $INFO ]]; then
+	apt install samba -y
+fi
+if ! ls /etc/samba | grep -q "shea.conf.d" ;then
+	cd /etc/samba
+	mkdir "shea.conf.d"
+fi
+#start part 1 :)
+#all func
+#Create share folder No password
+UNPASSWORD() {
+while true
+do
+	SHAREDIR
+TITLE="Confirm"
+MSGBOX="Are you sure that's correct ? :
+[$name]
+path = $Sdir
+$ijin
+guest ok = yes
+guest only = yes"
+if (whiptail --title " [ $TITLE ]" --yesno "$MSGBOX" 20 60);then
+break
+fi
+done
+cd /etc/samba/shea.conf.d/ && touch $name
+chmod 755 $name
+echo "[$name]
+# shared directory
+path = $Sdir
+# writable
+$ijin
+# guest OK
+guest ok = yes
+# guest only
+guest only = yes " >> $name
+echo "include = /etc/samba/shea.conf.d/$name" >> /etc/samba/smb.conf && /etc/init.d/smbd restart
+TITLE="Done"
+MSGBOX="$name was added in smb.cof 
+if your share is Permissions denied to write or Create some data 
+make sure your folder was have permision write for group other" && CAUTION
+}
+
+IJIN() {
+ijin=$(whiptail --title "[ Permissions ]" --cancel-button "exit" --menu "Choose Permissions : " 15 60 5 \
+"1" "read + executable + writable" \
+"2" "only read + executable"  3>&1 1>&2 2>&3)
+#check array data
+quitijin=$?
+if ! [[ $quitijin = 0 ]]; then
+	exit
+fi
+case $ijin in
+	1)ijin="writable = yes"
+		;;
+	2)ijin="writable = no"
+		;;
+esac
+}
+
+
+#view function
+INPUT() {
+input=$(whiptail --title "[ $TITLE ]" --no-button "Exit" --inputbox "$MSGBOX" 10 60 3>&1 1>&2 2>&3) 
+inputquit=$?
+if ! [ $inputquit = 0 ]; then
+    exit
+fi
+}
+CAUTION() {
+whiptail --title "[ $TITLE ]" --msgbox "$MSGBOX" 15 70
+}
+
+SHAREDIR() {
+	TITLE="directory"
+	MSGBOX="input directory location to share : \ndon't forget use '/' " && INPUT
+	Sdir=$input
+	TITLE="Name"
+	MSGBOX="Input name share folder : (don't use space!)"&& INPUT
+	name=$input && IJIN
+}
+#to part 2
+DELETE() {
+conflist="`ls ${WORK}`"
+if [[ -z $conflist ]]; then
+	TITLE="Alert"
+	MSGBOX="No shared folder to remove here" && CAUTION
+	exit
+fi
+
+let i=0 # define counting variable
+W=() # define working array
+while read -r line; do # process file by file
+    let i=$i+1
+    W+=($i "$line")
+done < <( ls -1 /etc/samba/shea.conf.d )
+FILE=$(whiptail --title "List file of directory /home" --menu "Chose one" 15 60 5 "${W[@]}" 3>&2 2>&1 1>&3) # show dialog and store output
+clear
+if [ $? -eq 0 ]; then # Exit with OK
+    amukan=$(readlink -f $(ls -1 /etc/samba/shea.conf.d | sed -n "`echo "$FILE p" | sed 's/ //'`"))
+	lokasi="`pwd`/"
+	Dshare=$(echo $amukan |sed "s~$lokasi~~g") #more filtering
+	#source : https://unix.stackexchange.com/questions/155636/dialog-menu-to-display-files-and-select-one-of-them
+#   :)
+	if [[ -z $FILE ]]; then
+		exit #exit when data is empty
+	fi
+		TITLE="DELETE"
+		MSGBOX="Deleting $Dshare Completed :)"
+		sed -i "s~include = ${WORK}${Dshare}~~g" /etc/samba/smb.conf 
+		cd ${WORK} && rm -r ${Dshare}
+		/etc/init.d/smbd restart &&	CAUTION
+fi
+}
+#to part 3
+inputKEY(){
+key=$(whiptail --title "[$TITLE]" --passwordbox "$MSGBOX" 10 60 3>&1 1>&2 2>&3) 
+inputquit=$?
+if ! [ $inputquit = 0 ]; then
+    exit
+fi
+}
+PASSWORD() {
+	SHAREDIR
+	while true
+	do
+		TITLE="User"
+		MSGBOX="Input username : " && INPUT
+		USERNAME=$input
+		if cut -d: -f1 /etc/passwd | grep -q "$USERNAME" ;then
+			break
+		else TITLE="Error"
+			MSGBOX="$USERNAME not found!" && CAUTION
+			TITLE="adduser"
+			MSGBOX="wanna to add user $USERNAME to samba ?"
+			if (whiptail --title " [ $TITLE ]" --yesno "$MSGBOX" 20 60);then
+				TITLE="ADD"
+				MSGBOX="Input new username :" && INPUT
+				USERNAME="$input"
+				useradd -M "$USERNAME"
+				if grep -q "$USERNAME" /etc/passwd ; then
+					TITLE="ADD"
+					MSGBOX="Adding user $USERNAME success ! to remove user $USERNAME use command userdel $USERNAME" && CAUTION
+				else TITLE="ADD"
+					MSGBOX="Adding user $USERNAME failed ! try to add it manualy use command
+					useradd -M $USERNAME " && CAUTION
+					exit
+				fi
+			fi
+		fi
+	done
+	while true
+	do
+		TITLE="Password"
+		MSGBOX="Input password for $USERNAME :" && inputKEY
+		keyone=$key
+		#retype password
+		TITLE="Password"
+		MSGBOX="Retype password for $USERNAME :" && inputKEY
+		keytwo=$key
+		if [[ $keyone = $keytwo ]]; then
+TITLE="Confirm"
+MSGBOX="Are you sure that's correct ? :
+[$name]
+path = $Sdir
+$ijin
+guest ok = no
+valid users = $USERNAME "
+			if (whiptail --title " [ $TITLE ]" --yesno "$MSGBOX" 20 60);then
+			break
+			fi
+		else TITLE="password"
+			MSGBOX="password $USERNAME not same" && CAUTION
+		fi
+	done
+
+	cd /etc/samba/shea.conf.d/ && touch $name
+	chmod 755 $name
+	echo "[$name]
+	# shared directory
+	path = $Sdir
+	# writable
+	$ijin
+	# guest OK
+	guest ok = no
+	valid users = $USERNAME " >> $name
+	(echo "$keyone"; echo "$keytwo") | smbpasswd -s -a $USERNAME #source :	https://ubuntuforums.org/showthread.php?t=1865953
+	echo "include = /etc/samba/shea.conf.d/$name" >> /etc/samba/smb.conf && /etc/init.d/smbd restart
+	TITLE="Done"
+	MSGBOX="$name was added in smb.cof" && CAUTION
+}
+
+ADD_USERNAME() {
+TITLE="ADD"
+MSGBOX="Input new username :" && INPUT
+name="$input"
+useradd -M "$name"
+if grep -q "$name" /etc/passwd ; then
+	TITLE="ADD"
+	MSGBOX="Adding user $name success ! to remove user $name use command userdel $name" && CAUTION
+else TITLE="ADD"
+	MSGBOX="Adding user $name failed ! try to add it manualy use command
+	useradd -M $name " && CAUTION
+	exit
+fi
+
+}
+
+
+
+TITLE="Shea"
+MSGBOX="Welcome to Shea , Samba Share Autoconfig :) 
+feature : 
+-> Share folder no password   (login without user)
+-> Share folder use password  (login with user and specific user)
+-> Share printer              (coming soon)" && CAUTION
+#main menu
+while true
+do
+clear
+menu=$(whiptail --title "[ Menu ]" --cancel-button "exit" --menu "Choose menu below : " 15 60 5 \
+"1" "Share folder without password" \
+"2" "Share folder with password" \
+"3" "Share printer (coming soon :v)" \
+"4" "Remove shared folder"  3>&1 1>&2 2>&3)
+#check array data
+quitmenu=$?
+
+if ! [[ $quitmenu = 0 ]]; then
+	break
+fi
+case $menu in
+	 1)UNPASSWORD
+		;;
+	 2)PASSWORD
+		;;
+	 3)TITLE="NO"
+		MSGBOX="This feature not avalible :(" && CAUTION
+		;;
+	 4)DELETE
+		;;
+esac
+done
